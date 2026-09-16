@@ -59,7 +59,7 @@ public final class MainActivity extends Activity {
         root.addView(title, new LinearLayout.LayoutParams(-1, -2));
 
         TextView help = new TextView(this);
-        help.setText("نمونه فرمان‌ها:\nبا علی تماس بگیر\nبه پیمان پیام بده جلسه ساعت ۵ است");
+        help.setText("نمونه فرمان‌ها:\nبا Ali تماس بگیر\nبا علی تماس بگیر\nبه Peyman پیام بده جلسه ساعت ۵ است\nبه پیمان پیام بده سلام تست");
         help.setTextSize(16);
         help.setTextColor(0xff334155);
         help.setGravity(Gravity.RIGHT);
@@ -73,6 +73,14 @@ public final class MainActivity extends Activity {
         micButton.setAllCaps(false);
         micButton.setOnClickListener(v -> startVoiceInput());
         root.addView(micButton, new LinearLayout.LayoutParams(-1, -2));
+
+        Button permissionButton = new Button(this);
+        permissionButton.setText("بررسی مجوزها");
+        permissionButton.setAllCaps(false);
+        permissionButton.setOnClickListener(v -> requestMissingPermissions());
+        LinearLayout.LayoutParams permissionParams = new LinearLayout.LayoutParams(-1, -2);
+        permissionParams.setMargins(0, 16, 0, 0);
+        root.addView(permissionButton, permissionParams);
 
         transcriptView = new TextView(this);
         transcriptView.setText("متن شنیده‌شده اینجا نمایش داده می‌شود.");
@@ -134,11 +142,13 @@ public final class MainActivity extends Activity {
         if (requestCode != REQUEST_SPEECH || resultCode != RESULT_OK || data == null) {
             return;
         }
+
         ArrayList<String> results = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
         if (results == null || results.isEmpty()) {
             setStatus("چیزی دریافت نشد.");
             return;
         }
+
         String spoken = results.get(0);
         transcriptView.setText(spoken);
         handleCommand(spoken);
@@ -194,6 +204,7 @@ public final class MainActivity extends Activity {
             requestMissingPermissions();
             return;
         }
+
         Intent intent = new Intent(Intent.ACTION_CALL);
         intent.setData(Uri.parse("tel:" + Uri.encode(contact.phone)));
         startActivity(intent);
@@ -206,15 +217,24 @@ public final class MainActivity extends Activity {
             return;
         }
 
-        Intent intent = new Intent(Intent.ACTION_SENDTO);
-        intent.setData(Uri.parse("smsto:" + Uri.encode(contact.phone)));
+        Intent intent = new Intent(Intent.ACTION_VIEW);
+        intent.setData(Uri.parse("sms:" + Uri.encode(contact.phone)));
         intent.putExtra("sms_body", body);
 
         try {
             startActivity(intent);
-            setStatus("پیام برای " + contact.name + " آماده شد. دکمه Send را بزنید.");
-        } catch (ActivityNotFoundException exception) {
-            setStatus("برنامه پیامک روی گوشی پیدا نشد.");
+            setStatus("پیام برای " + contact.name + " آماده شد. دکمه ارسال را بزنید.");
+        } catch (ActivityNotFoundException firstError) {
+            Intent fallback = new Intent(Intent.ACTION_SENDTO);
+            fallback.setData(Uri.parse("smsto:" + Uri.encode(contact.phone)));
+            fallback.putExtra("sms_body", body);
+
+            try {
+                startActivity(fallback);
+                setStatus("پیام برای " + contact.name + " آماده شد. دکمه ارسال را بزنید.");
+            } catch (ActivityNotFoundException secondError) {
+                setStatus("برنامه پیامک روی گوشی پیدا نشد.");
+            }
         }
     }
 
@@ -222,6 +242,7 @@ public final class MainActivity extends Activity {
         String text = TextTools.removeLeadingNoise(value);
         String[] suffixes = {" را برای", " را", " بفرست", " ارسال کن", " تماس بگیر", " زنگ بزن"};
         boolean changed = true;
+
         while (changed) {
             changed = false;
             for (String suffix : suffixes) {
@@ -232,6 +253,7 @@ public final class MainActivity extends Activity {
                 }
             }
         }
+
         return text;
     }
 
