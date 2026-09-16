@@ -1,0 +1,90 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Rebuild Android project layout
+        run: |
+          mkdir -p app/src/main/java/ir/satno/voiceassistant app/src/main/res/values
+          cp *.java app/src/main/java/ir/satno/voiceassistant/
+          cp AndroidManifest.xml app/src/main/AndroidManifest.xml
+          cp styles.xml app/src/main/res/values/styles.xml
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "SatnoVoiceAssistant"
+          include ":app"
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id "com.android.application" version "8.5.2" apply false
+          }
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id "com.android.application"
+          }
+
+          android {
+              namespace "ir.satno.voiceassistant"
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId "ir.satno.voiceassistant"
+                  minSdk 23
+                  targetSdk 35
+                  versionCode 1
+                  versionName "0.1.0"
+              }
+          }
+          EOF
+
+      - name: Install Android packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        run: gradle --no-daemon assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SatnoVoiceAssistant-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
