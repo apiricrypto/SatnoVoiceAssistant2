@@ -9,18 +9,15 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.speech.RecognizerIntent;
-import android.telephony.SmsManager;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 public final class MainActivity extends Activity {
     private static final int REQUEST_SPEECH = 10;
@@ -33,10 +30,7 @@ public final class MainActivity extends Activity {
     private final String[] permissions = {
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.READ_CONTACTS,
-            Manifest.permission.CALL_PHONE,
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.RECEIVE_SMS,
-            Manifest.permission.READ_SMS
+            Manifest.permission.CALL_PHONE
     };
 
     @Override
@@ -65,7 +59,7 @@ public final class MainActivity extends Activity {
         root.addView(title, new LinearLayout.LayoutParams(-1, -2));
 
         TextView help = new TextView(this);
-        help.setText("نمونه فرمان‌ها:\nبا علی تماس بگیر\nبه پیمان پیام بده جلسه ساعت ۵ است\nآخرین پیام از مجتبی را برای علی بفرست");
+        help.setText("نمونه فرمان‌ها:\nبا علی تماس بگیر\nبه پیمان پیام بده جلسه ساعت ۵ است");
         help.setTextSize(16);
         help.setTextColor(0xff334155);
         help.setGravity(Gravity.RIGHT);
@@ -79,14 +73,6 @@ public final class MainActivity extends Activity {
         micButton.setAllCaps(false);
         micButton.setOnClickListener(v -> startVoiceInput());
         root.addView(micButton, new LinearLayout.LayoutParams(-1, -2));
-
-        Button permissionButton = new Button(this);
-        permissionButton.setText("بررسی و گرفتن مجوزها");
-        permissionButton.setAllCaps(false);
-        permissionButton.setOnClickListener(v -> requestMissingPermissions());
-        LinearLayout.LayoutParams permissionParams = new LinearLayout.LayoutParams(-1, -2);
-        permissionParams.setMargins(0, 16, 0, 0);
-        root.addView(permissionButton, permissionParams);
 
         transcriptView = new TextView(this);
         transcriptView.setText("متن شنیده‌شده اینجا نمایش داده می‌شود.");
@@ -138,7 +124,7 @@ public final class MainActivity extends Activity {
             startActivityForResult(intent, REQUEST_SPEECH);
             setStatus("در حال گوش دادن...");
         } catch (ActivityNotFoundException exception) {
-            setStatus("تشخیص گفتار روی این گوشی فعال نیست. Google app یا سرویس Speech را بررسی کنید.");
+            setStatus("تشخیص گفتار روی این گوشی فعال نیست.");
         }
     }
 
@@ -162,45 +148,14 @@ public final class MainActivity extends Activity {
         CommandParser.Command command = CommandParser.parse(spoken);
         switch (command.type) {
             case CommandParser.Command.CALL:
-                chooseContact(command.contactName, contact -> call(contact));
+                chooseContact(command.contactName, this::call);
                 break;
             case CommandParser.Command.SMS:
-                chooseContact(command.contactName, contact -> sendSms(contact, command.messageBody));
-                break;
-            case CommandParser.Command.FORWARD_LATEST:
-                forwardLatest(command.sourceName, command.contactName);
+                chooseContact(command.contactName, contact -> openSms(contact, command.messageBody));
                 break;
             default:
                 setStatus("فرمان را متوجه نشدم. نمونه: «به علی پیام بده سلام»");
         }
-    }
-
-    private void forwardLatest(String sourceName, String targetName) {
-        if (TextUtils.isEmpty(targetName)) {
-            setStatus("مخاطب مقصد مشخص نشد.");
-            return;
-        }
-
-        chooseContact(targetName, target -> {
-            if (TextUtils.isEmpty(sourceName)) {
-                SmsStore.StoredSms latest = SmsStore.latest(this);
-                if (latest == null) {
-                    setStatus("هنوز SMS ورودی ذخیره نشده است.");
-                    return;
-                }
-                sendSms(target, latest.body);
-                return;
-            }
-
-            chooseContact(sourceName, source -> {
-                SmsStore.StoredSms latest = SmsStore.latestFrom(this, source.phone);
-                if (latest == null) {
-                    setStatus("از این مخاطب SMS ذخیره‌شده پیدا نشد.");
-                    return;
-                }
-                sendSms(target, latest.body);
-            });
-        });
     }
 
     private void chooseContact(String spokenName, ContactAction action) {
@@ -245,20 +200,22 @@ public final class MainActivity extends Activity {
         setStatus("تماس با " + contact.name);
     }
 
-    private void sendSms(ContactMatch contact, String body) {
-        if (checkSelfPermission(Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
-            requestMissingPermissions();
-            return;
-        }
+    private void openSms(ContactMatch contact, String body) {
         if (TextUtils.isEmpty(body)) {
             setStatus("متن پیام خالی است.");
             return;
         }
-        SmsManager smsManager = SmsManager.getDefault();
-        ArrayList<String> parts = smsManager.divideMessage(body);
-        smsManager.sendMultipartTextMessage(contact.phone, null, parts, null, null);
-        setStatus("SMS برای " + contact.name + " ارسال شد: " + body);
-        Toast.makeText(this, "پیام ارسال شد", Toast.LENGTH_SHORT).show();
+
+        Intent intent = new Intent(Intent.ACTION_SENDTO);
+        intent.setData(Uri.parse("smsto:" + Uri.encode(contact.phone)));
+        intent.putExtra("sms_body", body);
+
+        try {
+            startActivity(intent);
+            setStatus("پیام برای " + contact.name + " آماده شد. دکمه Send را بزنید.");
+        } catch (ActivityNotFoundException exception) {
+            setStatus("برنامه پیامک روی گوشی پیدا نشد.");
+        }
     }
 
     private static String cleanName(String value) {
@@ -268,8 +225,9 @@ public final class MainActivity extends Activity {
         while (changed) {
             changed = false;
             for (String suffix : suffixes) {
-                if (text.endsWith(suffix.trim())) {
-                    text = text.substring(0, text.length() - suffix.trim().length()).trim();
+                String item = suffix.trim();
+                if (text.endsWith(item)) {
+                    text = text.substring(0, text.length() - item.length()).trim();
                     changed = true;
                 }
             }
